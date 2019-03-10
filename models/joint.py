@@ -1,9 +1,8 @@
-# Author: Jose A. R. Fonollosa, Universitat Politecnica de Catalunya.
-#
-# This source code is licensed under the license found in the LICENSE file in
-# the root directory of this source tree. An additional grant of patent rights
-# can be found in the PATENTS file in the same directory.
-
+"""Fairseq-based implementation of the model proposed in
+   `"Joint Source-Target Self Attention with Locality Constraints" (Fonollosa, et al, 2019)
+    <https://>`_.
+   Author: Jose A. R. Fonollosa, Universitat Politecnica de Catalunya.
+"""
 import math
 
 import torch
@@ -14,12 +13,11 @@ from fairseq import options
 from fairseq import utils
 
 from fairseq.modules import (
-    AdaptiveInput, AdaptiveSoftmax, CharacterTokenEmbedder, LearnedPositionalEmbedding, MultiheadAttention,
-    SinusoidalPositionalEmbedding
+    LearnedPositionalEmbedding, SinusoidalPositionalEmbedding
 )
 
 from fairseq.models import (
-    FairseqIncrementalDecoder, FairseqEncoder, FairseqModel, register_model, register_model_architecture,
+    FairseqIncrementalDecoder, FairseqEncoder, FairseqModel, register_model, register_model_architecture
 )
 
 from fairseq.models.transformer import TransformerDecoderLayer
@@ -27,7 +25,8 @@ from fairseq.models.transformer import TransformerDecoderLayer
 @register_model('joint_attention')
 class JointAttentionModel(FairseqModel):
     """
-    Local Joint Source-Target model from `"Joint Source-Target Self Attention with Locality Constraints" (Fonollosa, et al, 2019)
+    Local Joint Source-Target model from
+    `"Joint Source-Target Self Attention with Locality Constraints" (Fonollosa, et al, 2019)
     <https://>`_.
 
     Args:
@@ -73,11 +72,11 @@ class JointAttentionModel(FairseqModel):
                             help='dropout probability for attention weights')
         parser.add_argument('--relu-dropout', type=float, metavar='D',
                             help='dropout probability after ReLU in FFN')
-        parser.add_argument('--layers', type=int, metavar='N',
+        parser.add_argument('--decoder-layers', type=int, metavar='N',
                             help='num layers')
-        parser.add_argument('--ffn-embed-dim', type=int, metavar='N',
+        parser.add_argument('--decoder-ffn-embed-dim', type=int, metavar='N',
                             help='embedding dimension for FFN')
-        parser.add_argument('--attention-heads', type=int, metavar='N',
+        parser.add_argument('--decoder-attention-heads', type=int, metavar='N',
                             help='num attention heads')
         parser.add_argument('--kernel-size-list', type=lambda x: options.eval_str_list(x, int),
                             help='list of kernel size (default: None)')
@@ -170,7 +169,7 @@ class JointAttentionEncoder(FairseqEncoder):
 
         Returns:
             dict:
-                - **encoder_out** (Tensor): embedding output of shape 
+                - **encoder_out** (Tensor): embedding output of shape
                   `(src_len, batch, embed_dim)`
                 - **encoder_padding_mask** (ByteTensor): the positions of
                   padding elements of shape `(batch, src_len)`
@@ -181,7 +180,7 @@ class JointAttentionEncoder(FairseqEncoder):
             x += self.embed_positions(src_tokens)
         # language embedding
         if self.embed_language is not None:
-            lang_emb = self.embed_scale * self.embed_language.unsqueeze_(1)
+            lang_emb = self.embed_scale * self.embed_language.view(1, 1, -1)
             x += lang_emb
         x = F.dropout(x, p=self.dropout, training=self.training)
 
@@ -226,7 +225,7 @@ class JointAttentionEncoder(FairseqEncoder):
 
 class JointAttentionDecoder(FairseqIncrementalDecoder):
     """
-    JointAttention decoder consisting of *args.layers* layers. Each layer
+    JointAttention decoder consisting of *args.decoder_layers* layers. Each layer
     is a :class:`TransformerDecoderLayer`.
 
     Args:
@@ -237,7 +236,7 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
             ``False``
     """
 
-    def __init__(self, args, dictionary, embed_tokens, left_pad=False):
+    def __init__(self, args, dictionary, embed_tokens, left_pad=False, final_norm=True):
         super().__init__(dictionary)
         self.dropout = args.dropout
         self.share_input_output_embed = args.share_decoder_input_output_embed
@@ -251,7 +250,7 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
         self.max_target_positions = args.max_target_positions
 
         self.embed_tokens = embed_tokens
-        self.embed_scale = math.sqrt(embed_dim)  # todo: try with input_embed_dim
+        self.embed_scale = math.sqrt(embed_dim)
 
         self.project_in_dim = Linear(input_embed_dim, embed_dim, bias=False) if embed_dim != input_embed_dim else None
 
@@ -276,8 +275,11 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
             self.embed_out = nn.Parameter(torch.Tensor(len(dictionary), output_embed_dim))
             nn.init.normal_(self.embed_out, mean=0, std=output_embed_dim ** -0.5)
         self.register_buffer('version', torch.Tensor([2]))
+        self.normalize = args.decoder_normalize_before and final_norm
+        if self.normalize:
+            self.layer_norm = LayerNorm(embed_dim)
 
-    def forward(self, input, encoder_out=None, incremental_state=None):
+    def forward(self, prev_output_tokens, encoder_out, incremental_state=None):
         """
         Args:
             input (dict): with
@@ -295,7 +297,6 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
                 - the last decoder layer's attention weights of shape `(batch,
                   tgt_len, src_len)`
         """
-        prev_output_tokens = input['prev_output_tokens']
         tgt_len = prev_output_tokens.size(1)
 
         # embed positions
@@ -320,7 +321,7 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
 
         # language embedding
         if self.embed_language is not None:
-            lang_emb = self.embed_scale * self.embed_language.unsqueeze_(1)
+            lang_emb = self.embed_scale * self.embed_language.view(1, 1, -1)
             x += lang_emb
 
         x = F.dropout(x, p=self.dropout, training=self.training)
@@ -328,8 +329,9 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
         attn = None
-        process_source = incremental_state is None or len(incremental_state) == 0)
-
+        inner_states = [x]
+        source = encoder_out['encoder_out']
+        process_source = incremental_state is None or len(incremental_state) == 0
 
         # extended padding mask
         source_padding_mask = encoder_out['encoder_padding_mask']
@@ -340,28 +342,27 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
             self_attn_padding_mask = None
 
         # transformer layers
-        inner_states = [x]
         for i, layer in enumerate(self.layers):
 
-            if self.transformer_kernel_size_list is not None:
-                target_mask = self.local_mask(x, self.transformer_kernel_size_list[i], causal=True, tgt_len=tgt_len)
+            if self.kernel_size_list is not None:
+                target_mask = self.local_mask(x, self.kernel_size_list[i], causal=True, tgt_len=tgt_len)
             elif incremental_state is None:
                 target_mask = self.buffered_future_mask(x)
             else:
                 target_mask = None
 
-            if target_mask is not None and self.mixed_attention:
+            if target_mask is not None:
                 zero_mask = target_mask.new_zeros((target_mask.size(0), source.size(0)))
                 self_attn_mask = torch.cat((zero_mask, target_mask), dim=1)
             else:
-                self_attn_mask = target_mask
+                self_attn_mask = None
 
             state = incremental_state
             if process_source:
                 if state is None:
                     state = {}
-                if self.transformer_kernel_size_list is not None:
-                    source_mask = self.local_mask(source, self.transformer_kernel_size_list[i], causal=False)
+                if self.kernel_size_list is not None:
+                    source_mask = self.local_mask(source, self.kernel_size_list[i], causal=False)
                 else:
                     source_mask = None
                 source, attn = layer(
@@ -411,7 +412,9 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
         return min(self.max_target_positions, self.embed_positions.max_positions())
 
     def buffered_future_mask(self, tensor):
+        """Cached future mask."""
         dim = tensor.size(0)
+        #pylint: disable=access-member-before-definition, attribute-defined-outside-init
         if not hasattr(self, '_future_mask') or self._future_mask is None or self._future_mask.device != tensor.device:
             self._future_mask = torch.triu(utils.fill_with_neg_inf(tensor.new(dim, dim)), 1)
         if self._future_mask.size(0) < dim:
@@ -419,6 +422,7 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
         return self._future_mask[:dim, :dim]
 
     def local_mask(self, tensor, kernel_size, causal, tgt_len=None):
+        """Locality constraint mask."""
         rows = tensor.size(0)
         cols = tensor.size(0) if tgt_len is None else tgt_len
         if causal:
@@ -429,7 +433,8 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
             else:
                 diag_u, diag_l = 1, kernel_size
         else:
-            diag_u, diag_l = ((kernel_size + 1) // 2, (kernel_size + 1) // 2) if kernel_size % 2 == 1 else (kernel_size // 2, kernel_size // 2 + 1)
+            diag_u, diag_l = ((kernel_size + 1) // 2, (kernel_size + 1) // 2) if kernel_size % 2 == 1 \
+                else (kernel_size // 2, kernel_size // 2 + 1)
         mask1 = torch.triu(utils.fill_with_neg_inf(tensor.new(rows, cols)), diag_u)
         mask2 = torch.tril(utils.fill_with_neg_inf(tensor.new(rows, cols)), -diag_l)
 
@@ -444,10 +449,9 @@ def Embedding(num_embeddings, embedding_dim, padding_idx):
 
 
 def LanguageEmbedding(embedding_dim):
-    m = Parameter(torch.Tensor(embedding_dim))
-    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
+    m = nn.Parameter(torch.Tensor(embedding_dim))
+    nn.init.normal_(m, mean=0, std=embedding_dim ** -0.5)
     return m
-}
 
 
 def LayerNorm(embedding_dim):
@@ -485,9 +489,9 @@ def base_architecture(args):
     args.decoder_output_dim = getattr(args, 'decoder_output_dim', args.decoder_embed_dim)
     args.decoder_input_dim = getattr(args, 'decoder_input_dim', args.decoder_embed_dim)
 
-    args.ffn_embed_dim = getattr(args, 'ffn_embed_dim', 2048)
-    args.attention_heads = getattr(args, 'attention_heads', 8)
-    args.layers = getattr(args, 'layers', 14)
+    args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 2048)
+    args.decoder_attention_heads = getattr(args, 'decoder_attention_heads', 8)
+    args.decoder_layers = getattr(args, 'decoder_layers', 14)
 
     args.decoder_normalize_before = getattr(args, 'decoder_normalize_before', False)
     args.attention_dropout = getattr(args, 'attention_dropout', 0.)
@@ -497,7 +501,7 @@ def base_architecture(args):
     args.share_all_embeddings = getattr(args, 'share_all_embeddings', True)
     args.no_token_positional_embeddings = getattr(args, 'no_token_positional_embeddings', False)
     args.kernel_size_list = getattr(args, 'kernel_size_list', None)
-    assert args.kernel_size_list is None or len(args.kernel_size_list) == args.layers, "kernel_size_list doesn't match layers"
+    assert args.kernel_size_list is None or len(args.kernel_size_list) == args.decoder_layers, "kernel_size_list doesn't match decoder_layers"
     args.language_embeddings = getattr(args, 'language_embeddings', True)
 
 
@@ -505,15 +509,16 @@ def base_architecture(args):
 def joint_attention_iwslt_de_en(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 256)
     args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 256)
-    args.ffn_embed_dim = getattr(args, 'ffn_embed_dim', 1024)
-    args.attention_heads = getattr(args, 'attention_heads', 4)
+    args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 1024)
+    args.decoder_attention_heads = getattr(args, 'decoder_attention_heads', 4)
     args.attention_dropout = getattr(args, 'attention_dropout', 0.1)
+    args.dropout = getattr(args, 'dropout', 0.3)
     base_architecture(args)
 
 
 @register_model_architecture('joint_attention', 'local_joint_attention_iwslt_de_en')
 def local_joint_attention_iwslt_de_en(args):
-    args.decoder_transformer_kernel_size_list = getattr(args, 'decoder_transformer_kernel_size_list', [3, 5, 7, 9, 11, 13, 15, 17, 21, 25, 29, 33, 37, 41])
+    args.kernel_size_list = getattr(args, 'kernel_size_list', [3, 5, 7, 9, 11, 13, 15, 17, 21, 25, 29, 33, 37, 41])
     joint_attention_iwslt_de_en(args)
 
 
@@ -526,8 +531,8 @@ def joint_attention_wmt_en_de(args):
 def joint_attention_wmt_en_de_big(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 1024)
     args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 1024)
-    args.ffn_embed_dim = getattr(args, 'ffn_embed_dim', 4096)
-    args.attention_heads = getattr(args, 'attention_heads', 16)
+    args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 4096)
+    args.decoder_attention_heads = getattr(args, 'decoder_attention_heads', 16)
     args.attention_dropout = getattr(args, 'attention_dropout', 0.1)
     args.dropout = getattr(args, 'dropout', 0.3)
     base_architecture(args)
