@@ -20,7 +20,7 @@ from fairseq.models import (
     FairseqIncrementalDecoder, FairseqEncoder, FairseqModel, register_model, register_model_architecture
 )
 
-from fairseq.models.transformer import TransformerDecoderLayer
+from .protected_multihead_attention import ProtectedMultiheadAttention
 
 @register_model('joint_attention')
 class JointAttentionModel(FairseqModel):
@@ -264,7 +264,7 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
 
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            TransformerDecoderLayer(args, no_encoder_attn=True)
+            ProtectedTransformerDecoderLayer(args, no_encoder_attn=True)
             for _ in range(args.decoder_layers)
         ])
 
@@ -439,6 +439,139 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
         mask2 = torch.tril(utils.fill_with_neg_inf(tensor.new(rows, cols)), -diag_l)
 
         return mask1 + mask2
+
+
+# Adapted from fairseq/model/transformer.py to use ProtectedMultiheadAttention
+class ProtectedTransformerDecoderLayer(nn.Module):
+    """Decoder layer block.
+
+    In the original paper each operation (multi-head attention, encoder
+    attention or FFN) is postprocessed with: `dropout -> add residual ->
+    layernorm`. In the tensor2tensor code they suggest that learning is more
+    robust when preprocessing each layer with layernorm and postprocessing with:
+    `dropout -> add residual`. We default to the approach in the paper, but the
+    tensor2tensor approach can be enabled by setting
+    *args.decoder_normalize_before* to ``True``.
+
+    Args:
+        args (argparse.Namespace): parsed command-line arguments
+        no_encoder_attn (bool, optional): whether to attend to encoder outputs
+            (default: False).
+    """
+
+    def __init__(self, args, no_encoder_attn=False):
+        super().__init__()
+        self.embed_dim = args.decoder_embed_dim
+        self.self_attn = ProtectedMultiheadAttention(
+            self.embed_dim, args.decoder_attention_heads,
+            dropout=args.attention_dropout,
+        )
+        self.dropout = args.dropout
+        self.relu_dropout = args.relu_dropout
+        self.normalize_before = args.decoder_normalize_before
+
+        self.self_attn_layer_norm = LayerNorm(self.embed_dim)
+
+        if no_encoder_attn:
+            self.encoder_attn = None
+            self.encoder_attn_layer_norm = None
+        else:
+            self.encoder_attn = MultiheadAttention(
+                self.embed_dim, args.decoder_attention_heads,
+                dropout=args.attention_dropout,
+            )
+            self.encoder_attn_layer_norm = LayerNorm(self.embed_dim)
+
+        self.fc1 = Linear(self.embed_dim, args.decoder_ffn_embed_dim)
+        self.fc2 = Linear(args.decoder_ffn_embed_dim, self.embed_dim)
+
+        self.final_layer_norm = LayerNorm(self.embed_dim)
+        self.need_attn = True
+
+        self.onnx_trace = False
+
+    def prepare_for_onnx_export_(self):
+        self.onnx_trace = True
+
+    def forward(self, x, encoder_out, encoder_padding_mask, incremental_state,
+                prev_self_attn_state=None, prev_attn_state=None, self_attn_mask=None,
+                self_attn_padding_mask=None):
+        """
+        Args:
+            x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
+            encoder_padding_mask (ByteTensor): binary ByteTensor of shape
+                `(batch, src_len)` where padding elements are indicated by ``1``.
+
+        Returns:
+            encoded output of shape `(batch, src_len, embed_dim)`
+        """
+        residual = x
+        x = self.maybe_layer_norm(self.self_attn_layer_norm, x, before=True)
+        if prev_self_attn_state is not None:
+            if incremental_state is None:
+                incremental_state = {}
+            prev_key, prev_value = prev_self_attn_state
+            saved_state = {"prev_key": prev_key, "prev_value": prev_value}
+            self.self_attn._set_input_buffer(incremental_state, saved_state)
+        x, _ = self.self_attn(
+            query=x,
+            key=x,
+            value=x,
+            key_padding_mask=self_attn_padding_mask,
+            incremental_state=incremental_state,
+            need_weights=False,
+            attn_mask=self_attn_mask,
+        )
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + x
+        x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
+
+        attn = None
+        if self.encoder_attn is not None:
+            residual = x
+            x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, before=True)
+            if prev_attn_state is not None:
+                if incremental_state is None:
+                    incremental_state = {}
+                prev_key, prev_value = prev_attn_state
+                saved_state = {"prev_key": prev_key, "prev_value": prev_value}
+                self.encoder_attn._set_input_buffer(incremental_state, saved_state)
+            x, attn = self.encoder_attn(
+                query=x,
+                key=encoder_out,
+                value=encoder_out,
+                key_padding_mask=encoder_padding_mask,
+                incremental_state=incremental_state,
+                static_kv=True,
+                need_weights=(not self.training and self.need_attn),
+            )
+            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = residual + x
+            x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, after=True)
+
+        residual = x
+        x = self.maybe_layer_norm(self.final_layer_norm, x, before=True)
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, p=self.relu_dropout, training=self.training)
+        x = self.fc2(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = residual + x
+        x = self.maybe_layer_norm(self.final_layer_norm, x, after=True)
+        if self.onnx_trace:
+            saved_state = self.self_attn._get_input_buffer(incremental_state)
+            self_attn_state = saved_state["prev_key"], saved_state["prev_value"]
+            return x, attn, self_attn_state
+        return x, attn
+
+    def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
+        assert before ^ after
+        if after ^ self.normalize_before:
+            return layer_norm(x)
+        else:
+            return x
+
+    def make_generation_fast_(self, need_attn=False, **kwargs):
+        self.need_attn = need_attn
 
 
 def Embedding(num_embeddings, embedding_dim, padding_idx):
