@@ -226,7 +226,7 @@ class JointAttentionEncoder(FairseqEncoder):
 class JointAttentionDecoder(FairseqIncrementalDecoder):
     """
     JointAttention decoder consisting of *args.decoder_layers* layers. Each layer
-    is a :class:`TransformerDecoderLayer`.
+    is a :class:`ProtectedTransformerDecoderLayer`.
 
     Args:
         args (argparse.Namespace): parsed command-line arguments
