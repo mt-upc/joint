@@ -1,3 +1,10 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
 data-bin
 checkpoints/
 examples/*/
+*.out
+*.log
