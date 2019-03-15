@@ -26,10 +26,12 @@ fairseq-train $DATA \
     --ddp-backend=no_c10d \
     --max-update 85000 --warmup-updates 4000 --warmup-init-lr '1e-07' \
     --adam-betas '(0.9, 0.98)' --adam-eps '1e-09' --keep-last-epochs 10 \
-    --arch local_joint_attention_iwslt_de_en --save-dir $SAVE
+    --arch local_joint_attention_iwslt_de_en --share-all-embeddings \
+    --save-dir $SAVE
 
 python scripts/average_checkpoints.py --inputs $SAVE \
     --num-epoch-checkpoints 10 --output "${SAVE}/checkpoint_last10_avg.pt"
 
 # Evaluation
-fairseq-generate $DATA --path "${SAVE}/checkpoint_last10_avg.pt" --batch-size 32 --beam 5 --remove-bpe --lenpen 1.7 --gen-subset test --quiet
+fairseq-generate $DATA --path "${SAVE}/checkpoint_last10_avg.pt" --user-dir models \
+    --batch-size 32 --beam 5 --remove-bpe --lenpen 1.7 --gen-subset test --quiet
