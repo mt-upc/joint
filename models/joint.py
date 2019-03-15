@@ -476,7 +476,7 @@ class ProtectedTransformerDecoderLayer(nn.Module):
             self.encoder_attn = None
             self.encoder_attn_layer_norm = None
         else:
-            self.encoder_attn = MultiheadAttention(
+            self.encoder_attn = ProtectedMultiheadAttention(
                 self.embed_dim, args.decoder_attention_heads,
                 dropout=args.attention_dropout,
             )
@@ -671,7 +671,19 @@ def joint_attention_wmt_en_de_big(args):
     base_architecture(args)
 
 
+@register_model_architecture('joint_attention', 'local_joint_attention_wmt_en_de_big')
+def local_joint_attention_wmt_en_de_big(args):
+    args.kernel_size_list = getattr(args, 'kernel_size_list', [7, 15, 31, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63])
+    joint_attention_wmt_en_de_big(args)
+
+
 @register_model_architecture('joint_attention', 'joint_attention_wmt_en_fr_big')
 def joint_attention_wmt_en_fr_big(args):
     args.dropout = getattr(args, 'dropout', 0.1)
     joint_attention_wmt_en_de_big(args)
+
+
+@register_model_architecture('joint_attention', 'local_joint_attention_wmt_en_fr_big')
+def local_joint_attention_wmt_en_fr_big(args):
+    args.kernel_size_list = getattr(args, 'kernel_size_list', [7, 15, 31, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63])
+    joint_attention_wmt_en_fr_big(args)
