@@ -122,7 +122,15 @@ class JointAttentionModel(FairseqModel):
             decoder_embed_tokens = encoder_embed_tokens
             args.share_decoder_input_output_embed = True
         else:
-            raise RuntimeError('The joint_attention model requires --share-all-embeddings')
+            if args.encoder_embed_dim != args.decoder_embed_dim:
+                raise ValueError(
+                    'The joint_attention model requires --encoder-embed-dim to match --decoder-embed-dim')
+            encoder_embed_tokens = build_embedding(
+                src_dict, args.encoder_embed_dim, args.encoder_embed_path
+            )
+            decoder_embed_tokens = build_embedding(
+                tgt_dict, args.decoder_embed_dim, args.decoder_embed_path
+            )
 
         encoder = JointAttentionEncoder(args, src_dict, encoder_embed_tokens, left_pad=args.left_pad_source)
         decoder = JointAttentionDecoder(args, tgt_dict, decoder_embed_tokens, left_pad=args.left_pad_target)
@@ -630,8 +638,8 @@ def base_architecture(args):
     args.attention_dropout = getattr(args, 'attention_dropout', 0.)
     args.relu_dropout = getattr(args, 'relu_dropout', 0.)
     args.dropout = getattr(args, 'dropout', 0.1)
-    args.share_decoder_input_output_embed = getattr(args, 'share_decoder_input_output_embed', False)
-    args.share_all_embeddings = getattr(args, 'share_all_embeddings', True)
+    args.share_decoder_input_output_embed = getattr(args, 'share_decoder_input_output_embed', True)
+    args.share_all_embeddings = getattr(args, 'share_all_embeddings', False)
     args.no_token_positional_embeddings = getattr(args, 'no_token_positional_embeddings', False)
     args.kernel_size_list = getattr(args, 'kernel_size_list', None)
     assert args.kernel_size_list is None or len(args.kernel_size_list) == args.decoder_layers, "kernel_size_list doesn't match decoder_layers"
