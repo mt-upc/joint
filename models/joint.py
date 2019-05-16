@@ -12,9 +12,7 @@ import torch.nn.functional as F
 from fairseq import options
 from fairseq import utils
 
-from fairseq.modules import (
-    LearnedPositionalEmbedding, SinusoidalPositionalEmbedding
-)
+from fairseq.modules import PositionalEmbedding
 
 from fairseq.models import (
     FairseqIncrementalDecoder, FairseqEncoder, FairseqModel, register_model, register_model_architecture
@@ -152,7 +150,6 @@ class JointAttentionEncoder(FairseqEncoder):
         self.embed_scale = math.sqrt(embed_dim)
         self.embed_positions = PositionalEmbedding(
             args.max_source_positions, embed_dim, self.padding_idx,
-            left_pad=left_pad,
             learned=args.encoder_learned_pos,
         ) if not args.no_token_positional_embeddings else None
         self.embed_language = LanguageEmbedding(embed_dim) if args.language_embeddings else None
@@ -256,7 +253,6 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
 
         self.embed_positions = PositionalEmbedding(
             args.max_target_positions, embed_dim, padding_idx,
-            left_pad=left_pad,
             learned=args.decoder_learned_pos,
         ) if not args.no_token_positional_embeddings else None
 
@@ -597,16 +593,6 @@ def Linear(in_features, out_features, bias=True):
     nn.init.xavier_uniform_(m.weight)
     if bias:
         nn.init.constant_(m.bias, 0.)
-    return m
-
-
-def PositionalEmbedding(num_embeddings, embedding_dim, padding_idx, left_pad, learned=False):
-    if learned:
-        m = LearnedPositionalEmbedding(num_embeddings + padding_idx + 1, embedding_dim, padding_idx, left_pad)
-        nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
-        nn.init.constant_(m.weight[padding_idx], 0)
-    else:
-        m = SinusoidalPositionalEmbedding(embedding_dim, padding_idx, left_pad, num_embeddings + padding_idx + 1)
     return m
 
 
