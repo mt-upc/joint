@@ -17,7 +17,7 @@ This repository contains the source code, pre-trained models, as well as instruc
 ### Requirements
 
 * [PyTorch](http://pytorch.org/) version >= 1.0.0
-* [fairseq](https://github.com/pytorch/fairseq) version >= 1.0.0
+* [fairseq](https://github.com/pytorch/fairseq) version >= 0.6.2
 * Python version >= 3.6
 * For training new models, you'll also need an NVIDIA GPU and [NCCL](https://github.com/NVIDIA/nccl)
 
