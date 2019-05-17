@@ -1,12 +1,13 @@
 # Joint Source-Target Self Attention with Locality Constraints (Fonollosa et al., 2019)
-This repository contains the source code, pre-trained models, as well as instructions to reproduce the results or [our paper](https://arxiv.org/submit/2691706)
+This repository contains the source code, pre-trained models, as well as instructions to reproduce the results or [our paper](http://arxiv.org/abs/1905.06596)
 
 ## Citation:
 ```bibtex
 @article{fonollosa2019joint,
   title={Joint Source-Target Self Attention with Locality Constraints},
   author={Jos\'e A. R. Fonollosa and Noe Casas and Marta R. Costa-juss\`a},
-  journal={arXiv preprint arXiv:0000.0000},
+  journal={arXiv preprint arXiv:1905.06596},
+  url={http://arxiv.org/abs/1905.06596}
   year={2019}
 }
 ```
