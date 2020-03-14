@@ -4,10 +4,12 @@ __pycache__/
 *$py.class
 
 data
+release
 data-bin
 .vscode
 checkpoints/
 examples/*/
 *.out
 *.log
+*.sh
 .pylintrc
