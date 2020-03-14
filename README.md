@@ -1,34 +1,4 @@
 # Joint Source-Target Self Attention with Locality Constraints (Fonollosa et al., 2019)
-<<<<<<< HEAD
-This repository contains the source code, pre-trained models, as well as instructions to reproduce the results or [our paper](http://www.acl2019.org/EN/index.xhtml)
-
-## Citation:
-```bibtex
-@inproceedings{fo2019joint,
-  title = {Joint Source-Target Self Attention with Locality Constraints},
-  author = {Anonymous ACL submission 1573},
-  booktitle = {Annual Meeting of the Association for Computational Linguistics},
-  year = {2019},
-  url = {http://www.acl2019.org/EN/index.xhtml},
-}
-```
-
-## Translation
-
-### Pre-trained models
-Dataset | Model | Test set
----|---|---
-[IWSLT14 German-English](https://wit3.fbk.eu/archive/2014-01/texts/de/en/de-en.tgz) | [download (.tar.bz2)](https:// /iwslt14.de-en.local.tar.bz2) | IWSLT14 test: <br> [download (.tar.bz2)](https:// /data/iwslt14.31K.de-en.test.tar.bz2)
-[WMT16 English-German](https://drive.google.com/uc?export=download&id=0B_bZck-ksdkpM25jRUN2X2UxMm8) | [download (.tar.bz2)](https:// /wmt16.en-de.joined-dict.local.tar.bz2) | newstest2014 (shared vocab): <br> [download (.tar.bz2)](https://dl.fbaipublicfiles.com/fairseq/data/wmt16.en-de.joined-dict.newstest2014.tar.bz2)
-LightConv | [WMT14 English-French](http://statmt.org/wmt14/translation-task.html#Download) | [download (.tar.bz2)](https:// /wmt14.en-fr.joined-dict.local.tar.bz2) | newstest2014: <br> [download (.tar.bz2)](https:// /data/wmt14.en-fr.joined-dict.newstest2014.tar.bz2)
-
-### IWSLT14 De-En
-Pre-processing for IWSLT'14 German to English translation task: ["Report on the 11th IWSLT evaluation campaign" by Cettolo et al.](http://workshop2014.iwslt.org/downloads/proceeding.pdf) with a joint BPE with 31K tokens
-```sh
-# Dataset download and preparation
-cd examples
-#./prepare-iwslt14-31K.sh
-=======
 This repository contains the source code, pre-trained models, as well as instructions to reproduce the results or [our paper](http://arxiv.org/abs/1905.06596)
 
 ## Citation:
@@ -85,7 +55,6 @@ The IWSLT'14 German to English translation database ["Report on the 11th IWSLT e
 # Dataset download and preparation
 cd examples
 ./prepare-iwslt14-31K.sh
->>>>>>> 901e4684039b0da1c4c06b2c9fa1db49753daf50
 cd ..
 
 # Dataset binarization:
@@ -119,14 +88,6 @@ python scripts/average_checkpoints.py --inputs $SAVE \
     --num-epoch-checkpoints 10 --output "${SAVE}/checkpoint_last10_avg.pt"
 
 # Evaluation
-<<<<<<< HEAD
-fairseq-generate data-bin/iwslt14.joined-dictionary.31K.de-en --user-dir models --path "${SAVE}/checkpoint_last10_avg.pt" \
-    --batch-size 32 --beam 5 --remove-bpe --lenpen 1.7 --gen-subset test --quiet
-```
-
-### WMT16 En-De
-Training and evaluating Local Joint Attention on WMT16 En-De using cosine scheduler on one machine with 8 V100 GPUs:
-=======
 fairseq-generate data-bin/iwslt14.joined-dictionary.31K.de-en --user-dir models \
     --path "${SAVE}/checkpoint_last10_avg.pt" \
     --batch-size 32 --beam 5 --remove-bpe --lenpen 1.7 --gen-subset test --quiet
@@ -219,6 +180,10 @@ python -m torch.distributed.launch --nproc_per_node 8 fairseq-train \
     --lr-shrink 1 --max-lr 0.0005 --lr 1e-7 --min-lr 1e-9 --warmup-init-lr 1e-07 \
     --t-mult 1 --lr-period-updates 70000 \
     ---save-dir $SAVE
+
+# Checkpoint averaging
+python ../fairseq/scripts/average_checkpoints.py --inputs $SAVE \
+    --num-epoch-checkpoints 10 --output "${SAVE}/checkpoint_last10_avg.pt"
 
 # Evaluation
 CUDA_VISIBLE_DEVICES=0 fairseq-generate data-bin/wmt14_en_fr --user-dir models \
