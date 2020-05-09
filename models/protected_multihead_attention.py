@@ -6,15 +6,17 @@
 # can be found in the PATENTS file in the same directory.
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.nn import Parameter
-import torch.nn.functional as F
+from fairseq.incremental_decoding_utils import with_incremental_state
 
 from fairseq import utils
 
 # Adapted from faiserq/modules/multihead_attention to deal with local attention
 # Local attetion masking in combination with padding masking can lead to 
 # all -Inf attention rows. This version detects and corrects this situation
+@with_incremental_state
 class ProtectedMultiheadAttention(nn.Module):
     """Multi-headed attention.
 
@@ -247,15 +249,13 @@ class ProtectedMultiheadAttention(nn.Module):
             self._set_input_buffer(incremental_state, input_buffer)
 
     def _get_input_buffer(self, incremental_state):
-        return utils.get_incremental_state(
-            self,
+        return self.get_incremental_state(
             incremental_state,
             'attn_state',
         ) or {}
 
     def _set_input_buffer(self, incremental_state, buffer):
-        utils.set_incremental_state(
-            self,
+        return self.set_incremental_state(
             incremental_state,
             'attn_state',
             buffer,

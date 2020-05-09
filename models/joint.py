@@ -15,13 +15,13 @@ from fairseq import utils
 from fairseq.modules import PositionalEmbedding
 
 from fairseq.models import (
-    FairseqIncrementalDecoder, FairseqEncoder, FairseqModel, register_model, register_model_architecture
+    FairseqIncrementalDecoder, FairseqEncoder, FairseqEncoderDecoderModel, register_model, register_model_architecture
 )
 
 from .protected_multihead_attention import ProtectedMultiheadAttention
 
 @register_model('joint_attention')
-class JointAttentionModel(FairseqModel):
+class JointAttentionModel(FairseqEncoderDecoderModel):
     """
     Local Joint Source-Target model from
     `"Joint Source-Target Self Attention with Locality Constraints" (Fonollosa, et al, 2019)
@@ -225,7 +225,7 @@ class JointAttentionEncoder(FairseqEncoder):
         """Maximum input length supported by the encoder."""
         if self.embed_positions is None:
             return self.max_source_positions
-        return min(self.max_source_positions, self.embed_positions.max_positions())
+        return min(self.max_source_positions, self.embed_positions.max_positions)
 
 
 class JointAttentionDecoder(FairseqIncrementalDecoder):
@@ -413,7 +413,7 @@ class JointAttentionDecoder(FairseqIncrementalDecoder):
         """Maximum output length supported by the decoder."""
         if self.embed_positions is None:
             return self.max_target_positions
-        return min(self.max_target_positions, self.embed_positions.max_positions())
+        return min(self.max_target_positions, self.embed_positions.max_positions)
 
     def buffered_future_mask(self, tensor):
         """Cached future mask."""
